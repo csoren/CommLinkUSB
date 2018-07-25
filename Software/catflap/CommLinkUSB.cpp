@@ -10,6 +10,7 @@
 
 CommLinkUSB::CommLinkUSB() 
 :   deviceHandle(NULL) {
+    libusb_init(NULL);
 }
 
 CommLinkUSB::~CommLinkUSB() {
@@ -35,8 +36,6 @@ static int USBErrorToCaetla(int result, int actualLength) {
 
 
 bool CommLinkUSB::Initialize() {
-    libusb_init(NULL);
-
     deviceHandle = libusb_open_device_with_vid_pid(NULL, VENDOR_ID, PRODUCT_ID);
     if (deviceHandle != NULL) {
         if (libusb_set_configuration(deviceHandle, 1) != 0)
