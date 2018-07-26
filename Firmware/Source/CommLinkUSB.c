@@ -46,29 +46,33 @@ int main(void)
 	{
 		USB_USBTask();
 
-		if (PAR_ReadAvailable())
+		Endpoint_SelectEndpoint(VENDOR_OUT_EPADDR);
+		if (Endpoint_IsOUTReceived())
 		{
-			uint8_t data = PAR_ReadByte();
+			uint8_t bytesReceived = 0;
+			uint8_t data[1];
 
-			Endpoint_SelectEndpoint(VENDOR_IN_EPADDR);
-			Endpoint_Write_8(data);
-			Endpoint_ClearIN();
-		}
-		else
-		{
-			Endpoint_SelectEndpoint(VENDOR_OUT_EPADDR);
-			if (Endpoint_IsOUTReceived())
+			while (Endpoint_BytesInEndpoint() && bytesReceived < sizeof(data))
 			{
-				if (Endpoint_BytesInEndpoint())
-				{
-					uint8_t data = Endpoint_Read_8();
-					PAR_WriteByte(data);
-				}
+				data[bytesReceived++] = Endpoint_Read_8();
+			}
+			if (!Endpoint_BytesInEndpoint())
+			{
+				Endpoint_ClearOUT();
+			}
 
-				if (!Endpoint_BytesInEndpoint())
+			if (bytesReceived > 0)
+			{
+				Endpoint_SelectEndpoint(VENDOR_IN_EPADDR);
+				for (uint8_t i = 0; i < bytesReceived; ++i)
 				{
-					Endpoint_ClearOUT();
+					PAR_WriteByte(data[i]);
+					while (!PAR_ReadAvailable())
+					{}
+					uint8_t r = PAR_ReadByte();
+					Endpoint_Write_8(r);
 				}
+				Endpoint_ClearIN();
 			}
 		}
 	}

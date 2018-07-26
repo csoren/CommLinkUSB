@@ -9,7 +9,8 @@
 #define ENDPOINT_OUT (0x04 | LIBUSB_ENDPOINT_OUT)
 
 CommLinkUSB::CommLinkUSB() 
-:   deviceHandle(NULL) {
+:   deviceHandle(NULL),
+    bytesCachedCount(0) {
     libusb_init(NULL);
 }
 
@@ -21,8 +22,8 @@ CommLinkUSB::~CommLinkUSB() {
 }
 
 
-static int USBErrorToCaetla(int result, int actualLength) {
-    if (result == 0 && actualLength == 1)
+static int USBErrorToCaetla(int result, bool lengthOk) {
+    if (result == 0 && lengthOk)
         return CAETLA_ERROR_OK;
 
     if (result == LIBUSB_ERROR_TIMEOUT)
@@ -48,13 +49,50 @@ bool CommLinkUSB::Initialize() {
 
 
 int CommLinkUSB::SendByte(uint8 data, uint32 timeout) {
-    int actualLength;
-    int result = libusb_bulk_transfer(deviceHandle, ENDPOINT_OUT, &data, 1, &actualLength, timeout);
-    return USBErrorToCaetla(result, actualLength);
+    int error = FlushIfFull(timeout);
+    if (error != CAETLA_ERROR_OK)
+        return error;
+
+    cachedBytes[bytesCachedCount++] = data;
+    return CAETLA_ERROR_OK;
 }
 
 int CommLinkUSB::ReceiveByte(uint8* data, uint32 timeout) {
+    Flush(timeout);
+
     int actualLength;
     int result = libusb_bulk_transfer(deviceHandle, ENDPOINT_IN, data, 1, &actualLength, timeout);
-    return USBErrorToCaetla(result, actualLength);
+    return USBErrorToCaetla(result, actualLength == 1);
+}
+
+int CommLinkUSB::FlushIfFull(uint32 timeout) {
+    if (bytesCachedCount == MAX_CACHED_BYTES)
+        return Flush(timeout);
+
+    return CAETLA_ERROR_OK;
+}
+
+int CommLinkUSB::Flush(uint32 timeout) {
+    if (bytesCachedCount > 0) {
+        int actualLength;
+        int result = libusb_bulk_transfer(deviceHandle, ENDPOINT_OUT, cachedBytes, bytesCachedCount, &actualLength, timeout);
+        int caetlaError = USBErrorToCaetla(result, actualLength == bytesCachedCount);
+        bytesCachedCount = 0;
+        return caetlaError;
+    }
+
+    return CAETLA_ERROR_OK;
+}
+
+int CommLinkUSB::DiscardBytes(size_t count, uint32 timeout) {
+    Flush(timeout);
+
+    while (count-- > 0) {
+        uint8 data;
+        int error = ReceiveByte(&data, timeout);
+        if (error != CAETLA_ERROR_OK)
+            return error;
+    }
+
+    return CAETLA_ERROR_OK;
 }

@@ -350,16 +350,14 @@ int CCaetla::ChooseMainOrDebug(void) {
 // Set Caetla PC-server mode
 
 int CCaetla::ServerMode(int mode) {
-	uint8 r;
-
 	IssueCommand(CAETLA_CONSOLEMODE);
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
 	}
 	if (mode)
-		r = Send8(1);
+		Send8(1);
 	else
-		r = Send8(0);
+		Send8(0);
 	return(m_ErrorCode);
 }
 
@@ -373,6 +371,9 @@ int CCaetla::Resume(void) {
 	return(m_ErrorCode);
 }
 
+void CCaetla::Flush() {
+	m_ErrorCode = m_CommLinkUSB.Flush(m_TimeOut);
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 // Exchange Byte
@@ -393,29 +394,45 @@ uint8 CCaetla::Swap8(uint8 data) {
 // Send Byte
 // NO input retrieval for X-Plorer
 
-uint8 CCaetla::Send8(uint8 data) {
-	return Swap8(data);
+void CCaetla::Send8(uint8 data) {
+	m_ErrorCode = m_CommLinkUSB.SendByte(data, m_TimeOut);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Exchange half-word (16-bits)
 
-uint16 CCaetla::Send16(uint16 data) {
-	return ((Send8((data >> 8) & 0xff) << 8) | (Send8(data & 0xff)));
+uint16 CCaetla::Swap16(uint16 data) {
+	uint16 r = 0;
+	r |= Swap8((data >> 8) & 0xff) << 8;
+	r |= Swap8(data & 0xff);
+	return r;
+}
+
+void CCaetla::Send16(uint16 data) {
+	Send8((data >> 8) & 0xff);
+	Send8(data & 0xff);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Exchange word (32-bits)
 
-uint32 CCaetla::Send32(uint32 data) {
-	return ((Send16((uint16)(data >> 16) & 0xffff) << 16) | (Send16((uint16)data & 0xffff)));
+uint32 CCaetla::Swap32(uint32 data) {
+	uint32 r = 0;
+	r |= Swap16((uint16)(data >> 16) & 0xffff) << 16;
+	r |= Swap16((uint16)data & 0xffff);
+	return r;
+}
+
+void CCaetla::Send32(uint32 data) {
+	Send16((uint16)(data >> 16) & 0xffff);
+	Send16((uint16)data & 0xffff);
 }
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // Fetch byte from port
 
-uint8 CCaetla::Get8(void) {
+uint8 CCaetla::Receive8(void) {
 	return Swap8(0);
 }
 
@@ -423,14 +440,22 @@ uint8 CCaetla::Get8(void) {
 // Fetch half-word (16-bits)
 
 uint16 CCaetla::Receive16(void) {
-	return (Swap8(1) << 8) | (Swap8(2));
+	uint16 r = 0;
+	r |= Swap8(1) << 8;
+	r |= Swap8(2);
+	return r;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Fetch word (32-bits)
 
 uint32 CCaetla::Receive32(void) {
-	return ((Swap8(0) << 24) | (Swap8(0) << 16) | (Swap8(0) << 8) | (Swap8(0)));
+	uint32 r = 0;
+	r |= Swap8(0) << 24;
+	r |= Swap8(0) << 16;
+	r |= Swap8(0) << 8;
+	r |= Swap8(0);
+	return r;
 }
 
 
@@ -823,6 +848,8 @@ int CCaetla::Execute(PSX_EXE_HEADER *exe_header) {
 		Send8(1);
 	}
 
+	Flush();
+
 	return(m_ErrorCode);
 }
 
@@ -1022,6 +1049,8 @@ int CCaetla::SendData(void *pdata, uint32 length, bool showprogress) {
 			Send8(data[count++]);
 	}
 
+	Flush();
+
 	return(m_ErrorCode);
 
 }
@@ -1113,6 +1142,8 @@ int CCaetla::UpdateByte(uint32 addr, uint8 data) {
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
 	}
+
+	Flush();
 
 	return m_ErrorCode;
 }
@@ -1265,7 +1296,8 @@ int CCaetla::UploadDbg(void *pdata, uint32 addr, uint32 length, bool showprogres
 	}
 //printf("#6\n");
 
-	complete(CAETLA_ERROR_OK);
+	Flush();
+	return m_ErrorCode;
 }
 
 
@@ -1282,6 +1314,8 @@ int CCaetla::SetRegister(int reg, uint32 data) {
 		return m_ErrorCode;
 	}
 	Send32(data);
+
+	Flush();
 	return(m_ErrorCode);
 }
 
@@ -1295,7 +1329,7 @@ int CCaetla::GetCpCond(void) {
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
 	}
-	cp = Get8();
+	cp = Receive8();
 	return(cp);
 }
 
@@ -1328,9 +1362,7 @@ int CCaetla::SetHBP(uint32 dat1, uint32 dat2, uint32 dat3, uint32 dat4) {
 		return m_ErrorCode;
 	}
 	Send32(dat4);
-	if (m_ErrorCode != CAETLA_ERROR_OK)  {
-		return m_ErrorCode;
-	}
+	Flush();
 	return(m_ErrorCode);
 
 #if 0   //DISABLE
@@ -1400,8 +1432,7 @@ int CCaetla::IssueCommand(uint8 command) {
 		complete(CAETLA_ERROR_PROTOCOL);
 	}
 
-//	r=Swap8(command);
-	r = Send8(command);
+	r = Swap8(command);
 	if (r) {
 		complete(CAETLA_ERROR_PROTOCOL);
 	}
@@ -1846,6 +1877,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 			return m_ErrorCode;
 		}
 		Send16(rc);
+		Flush();
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -1886,6 +1918,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 			return m_ErrorCode;
 		}
 		Send16(rc);
+		Flush();
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -1902,11 +1935,11 @@ int CCaetla::ServerCommand(uint8 cmd) {
 		Say("Read\n");
 #endif  //DISABLE
 
-		fd = Send16(0);
+		fd = Swap16(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
-		size = Send32(0);
+		size = Swap32(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -1948,6 +1981,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 			return m_ErrorCode;
 		}
 		Send8(x);
+		Flush();
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -1964,11 +1998,11 @@ int CCaetla::ServerCommand(uint8 cmd) {
 		Say("Write\n");
 #endif  //DISABLE
 
-		fd = Send16(0);
+		fd = Swap16(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
-		size = Send32(0);
+		size = Swap32(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -2021,7 +2055,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 
 			ShowError();
 #endif  //DISABLE
-			Get8();
+			Receive8();
 #if (SHOW_CON_DBG)
 			printf("[here]\n", r);
 
@@ -2047,6 +2081,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 			return m_ErrorCode;
 		}
 		Send8(x);
+		Flush();
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -2061,11 +2096,11 @@ int CCaetla::ServerCommand(uint8 cmd) {
 		Say("Seek\n");
 #endif  //DISABLE
 
-		fd = Send16(0);
+		fd = Swap16(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
-		off = Send32(0);
+		off = Swap32(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -2084,6 +2119,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 			return m_ErrorCode;
 		}
 		Send32(rc);
+		Flush();
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -2097,7 +2133,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 		Say("Close\n");
 #endif  //DISABLE
 
-		fd = Send16(0);
+		fd = Swap16(0);
 
 
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
@@ -2106,6 +2142,7 @@ int CCaetla::ServerCommand(uint8 cmd) {
 
 		close(fd);
 		Send8(0);
+		Flush();
 
 #if (SHOW_CON_DBG)
 		Dump("[Request to close file 0x%x]\n", fd);
@@ -2476,7 +2513,7 @@ int CCaetla::DownloadVRAM(void *data, int x, int y, int w, int h, int depth) {
 //	for(i=0;i<w*h;i++)
 	i = 0;
 	while ((i < w * h) && (m_ErrorCode == CAETLA_ERROR_OK)) {
-		pixel = Send16(0);
+		pixel = Swap16(0);
 
 		pixel = ((pixel & 0xff) << 8) | ((pixel >> 8) & 0xff);
 		if (depth == 3) {
@@ -2639,6 +2676,7 @@ int CCaetla::UploadVRAM(void *data, int x, int y, int w, int h, int depth) {
 	}
 
 	EndProgressBar();
+	Flush();
 
 	return(m_ErrorCode);
 }
@@ -2780,6 +2818,7 @@ int CCaetla::SetVRAMInfo(int x, int y, int w, int h, int depth) {
 		return m_ErrorCode;
 	}
 	Send16((depth == 24) ? 1 : 0);
+	Flush();
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
 	}
@@ -3110,7 +3149,7 @@ int CCaetla::ScanMemCards(int port) {
 		return m_ErrorCode;
 	}
 
-	ret = Send16(0);
+	ret = Swap16(0);
 
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
@@ -3126,7 +3165,7 @@ int CCaetla::ScanMemCards(int port) {
 		return m_ErrorCode;
 	}
 
-	m_MemCards[port].numfiles = Send16(0);
+	m_MemCards[port].numfiles = Swap16(0);
 
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
@@ -3152,12 +3191,12 @@ int CCaetla::ScanMemCards(int port) {
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
-		m_MemCards[port].status = Send16(0);
+		m_MemCards[port].status = Swap16(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
 	} else {
-		m_MemCards[port].status = Send16(0);
+		m_MemCards[port].status = Swap16(0);
 
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
@@ -3182,7 +3221,7 @@ int CCaetla::GetCardStatus(int port) {
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return(0);
 		}
-		m_MemCards[port].status = Send16(0);
+		m_MemCards[port].status = Swap16(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return(0);
 		}
@@ -3325,6 +3364,8 @@ int CCaetla::DownloadMemCardFile(void *dest, int port, int mfile) {
 			}
 		}
 	}
+
+	Flush();
 
 	return(m_ErrorCode);
 }
@@ -3479,11 +3520,12 @@ int CCaetla::UploadMemCardFile(char *name, void *data, int port, int mfile, int 
 			return m_ErrorCode;
 		}
 
-		m_MemCards[port].status = Send16(0);
+		m_MemCards[port].status = Swap16(0);
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
 		Send16(0);
+		Flush();
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
 		}
@@ -3493,6 +3535,7 @@ int CCaetla::UploadMemCardFile(char *name, void *data, int port, int mfile, int 
 		Say("Error - Unable to upload Memory Card file\n");
 
 		Send16(0);
+		Flush();
 
 		if (m_ErrorCode != CAETLA_ERROR_OK)  {
 			return m_ErrorCode;
@@ -3762,6 +3805,7 @@ int CCaetla::ReadCardSectors(void *data, int port, int start, int len) {
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
 	}
+	Flush();
 
 	return(m_ErrorCode);
 }
@@ -3841,6 +3885,8 @@ int CCaetla::WriteCardSectors(void *data, int port, int start, int len) {
 		return m_ErrorCode;
 	}
 	Send16(0);
+	Flush();
+
 	if (m_ErrorCode != CAETLA_ERROR_OK)  {
 		return m_ErrorCode;
 	}

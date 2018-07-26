@@ -49,11 +49,6 @@ public:
 	int             DownloadDbg(void *, uint32, uint32, bool, bool);
 	int             UploadDbg(void *, uint32, uint32, bool, bool);
 
-	uint8   Swap8(uint8);
-	uint8   Send8(uint8);
-	uint8   Get8(void);
-	uint8   Get8s(void);
-
 	int             DosConsole(void);
 	int             InitWinConsole(void);
 	int             WinConsole(void);
@@ -154,18 +149,18 @@ protected:
 
 	FILE            *m_FILE;
 
-	uint8   RawPortIn(int);
-	void            RawPortOut(int, uint8);
+	void	Flush();
 
-	uint8   ByteIn(int);
-	void            ByteOut(int, uint8);
-	int             Handshake(int);
-
-	uint8   Receive(void);
-	uint16  Send16(uint16);
-	uint32  Send32(uint32);
+	uint8   Swap8(uint8);
+	uint16  Swap16(uint16);
+	uint32  Swap32(uint32);
+	void    Send8(uint8);
+	void    Send16(uint16);
+	void    Send32(uint32);
+	uint8   Receive8(void);
 	uint16  Receive16(void);
 	uint32  Receive32(void);
+
 	int             SendData(void *, uint32, bool);
 
 	int             ReceiveData(void *, uint32, bool);
